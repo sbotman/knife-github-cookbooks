@@ -53,6 +53,28 @@ class Chef
         :description => "Default branch to work with",
         :default => "master"
 
+      option :github_api_version,
+             :short => "-a ",
+             :long => "--github-api_ver VERSION",
+             :description => "Version number of the API (default is: v3)"
+
+      option :github_url,
+             :short => "-u URL",
+             :long => "--github-url URL",
+             :description => "URL of the github enterprise appliance"
+
+      option :github_ssl_verify,
+             :short => "-s",
+             :long => "--github-ssl-verify",
+             :description => "Enable ssl verify on the url if https is used. (default is: false)",
+             :boolean => true
+
+      option :github_organizations,
+             :short => "-O ORG:ORG",
+             :long => "--github-org ORG:ORG",
+             :description => "Lookup chef cookbooks in this colon-separated list of organizations",
+             :proc => lambda { |o| o.split(":") }
+
       attr_reader :github_user
       attr_reader :github_repo
       attr_reader :github_branch
@@ -61,11 +83,18 @@ class Chef
       def run
         extend Chef::Mixin::ShellOut
 
+        config[:github_url]           ? @github_url = config[:github_url]                     : @github_url = Chef::Config[:github_url]
+        config[:github_api_version]   ? @github_api_version = config[:github_api_version]     : @github_api_version = Chef::Config[:github_api_version] || "v3"
+        config[:github_ssl_verify]    ? @github_ssl_verify = config[:github_ssl_verify]       : @github_ssl_verify = Chef::Config[:github_ssl_verify] || false
+        config[:github_organizations] ? @github_organizations = config[:github_organizations] : @github_organizations = Chef::Config[:github_organizations]
+
         if config[:cookbook_path]
           Chef::Config[:cookbook_path] = config[:cookbook_path]
         else
           config[:cookbook_path] = Chef::Config[:cookbook_path]
         end
+
+        config[:ssh] ? @github_ssh = config[:ssh] : @github_ssh = Chef::Config[:github_ssh] || false
 
         parse_name_args!
 
@@ -108,6 +137,12 @@ class Chef
         end
       end
 
+      def get_dns_name(url)
+        name = url.downcase.gsub("http://","") if url.downcase.start_with?("http://")
+	name = url.downcase.gsub("https://","") if url.downcase.start_with?("https://")
+        name
+      end
+
       def temp_clone_path
         "_tmp_chef_#{@cookbook_name}"
       end
@@ -133,15 +168,17 @@ class Chef
       end
 
       def github_uri
-        if config[:ssh] || @github_user == ENV['USER']
-          "git@github.com:#{@github_user}/#{@github_repo}.git"
+        dns = get_dns_name(@github_url)
+        if @github_ssh || @github_user == ENV['USER']
+          "git@#{dns}:#{@github_user}/#{@github_repo}.git"
         else
-          "git://github.com/#{@github_user}/#{@github_repo}.git"
+          "git://#{dns}/#{@github_user}/#{@github_repo}.git"
         end
       end
 
       def sha
-        @sha ||= noauth_rest.get_rest("http://github.com/api/v2/json/repos/show/#{@github_user}/#{@github_repo}/branches")['branches'][github_branch]
+        dns = get_dns_name(@github_url)
+        @sha ||= noauth_rest.get_rest("http://#{dns}/api/#{@github_api_version}/json/repos/show/#{@github_user}/#{@github_repo}/branches")['branches'][github_branch]
       end
 
       def github_branch
