@@ -45,6 +45,12 @@ class Chef
              :description => "Get all cookbooks from github.",
              :boolean => true
 
+      option :mismatch,
+             :short => "-m",
+             :long => "--mismatch",
+             :description => "Only show cookbooks where versions mismatch",
+             :boolean => true
+
       option :github_organizations,
              :long => "--github-org ORG:ORG",
              :description => "Lookup chef cookbooks in this colon-separated list of organizations",
@@ -102,8 +108,8 @@ class Chef
           cb_and_ver.each { |k,v|
             cookbook = k
             version  = v['versions'][0]['version']
-            get_all_repos[k].nil? || get_all_repos[k]['ssh_url'].nil? ? ssh_url = "ERROR: Cannot find cookbook!" : ssh_url = get_all_repos[k]['ssh_url']
-            get_all_repos[k].nil? || get_all_repos[k]['latest_tag'].nil? ? gh_tag = "ERROR: No tags!" : gh_tag = get_all_repos[k]['latest_tag']
+            get_all_repos[k].nil? || get_all_repos[k]['ssh_url'].nil? ? ssh_url = ui.color("ERROR: Cannot find cookbook!", :red) : ssh_url = get_all_repos[k]['ssh_url']
+            get_all_repos[k].nil? || get_all_repos[k]['latest_tag'].nil? ? gh_tag = ui.color("ERROR: No tags!", :red) : gh_tag = get_all_repos[k]['latest_tag']
             all_repos[cookbook] = { 'name' => cookbook, 'latest_cb_tag' => version, 'ssh_url' => ssh_url, 'latest_gh_tag' => gh_tag } 
           }
         end
@@ -138,10 +144,14 @@ class Chef
           if config[:fields]
              config[:fields].downcase.split(',').each { |n| object_list << ((r[("#{n}").strip]).to_s || 'n/a') }
           else
-            object_list << (r['name'] || 'n/a')
-            object_list << (r['latest_cb_tag'] || 'n/a')
-            object_list << (r['ssh_url'] || 'n/a')
-            object_list << (r['latest_gh_tag'] || 'n/a')
+            next if config[:mismatch] && (r['latest_gh_tag'] == r['latest_cb_tag'])
+            r['latest_gh_tag'] == r['latest_cb_tag'] ? color = :white : color = :yellow
+            color = :white if config[:all]
+ 
+            object_list << ui.color((r['name'] || 'n/a'), color)
+            object_list << ui.color((r['latest_cb_tag'] || 'n/a'), color)
+            object_list << ui.color((r['ssh_url'] || 'n/a'), color)
+            object_list << ui.color((r['latest_gh_tag'] || 'n/a'), color)
           end
         end
 
